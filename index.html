@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Student System Pro</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+body { font-family: Arial; background:#f4f6f9; margin:0; }
+.container { max-width:1000px; margin:auto; padding:20px; }
+.card { background:white; padding:20px; margin-top:20px; border-radius:10px; }
+input, select, button { padding:10px; margin:5px; }
+button { background:#007bff; color:white; border:none; cursor:pointer; }
+.hidden { display:none; }
+table { width:100%; border-collapse:collapse; margin-top:10px; }
+th, td { border:1px solid #ddd; padding:10px; text-align:center; }
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<!-- LOGIN -->
+<div id="loginPage" class="card">
+<h2>Login</h2>
+<input id="username" placeholder="Username">
+<input id="password" type="password" placeholder="Password">
+<button onclick="login()">Login</button>
+<p id="error" style="color:red;"></p>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard" class="hidden">
+
+<h2>Dashboard (<span id="roleDisplay"></span>)</h2>
+
+<!-- ADD STUDENT -->
+<div id="adminControls" class="card hidden">
+<h3>Add / Edit Student</h3>
+<input id="name" placeholder="Name">
+<input id="grade" placeholder="Grade">
+<input id="absent" placeholder="Absences">
+<button onclick="addStudent()">Save</button>
+</div>
+
+<!-- TABLE -->
+<div class="card">
+<h3>Student Records</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th><th>Grade</th><th>Absences</th><th>Actions</th>
+</tr>
+</thead>
+<tbody id="table"></tbody>
+</table>
+</div>
+
+<!-- QR GENERATOR -->
+<div class="card">
+<h3>QR Generator</h3>
+<input id="qrText" placeholder="Enter text">
+<button onclick="generateQR()">Generate</button>
+<div id="qrcode"></div>
+</div>
+
+<!-- QR SCANNER -->
+<div class="card">
+<h3>QR Scanner</h3>
+<div id="reader" style="width:300px;"></div>
+<p id="scanResult"></p>
+</div>
+
+<!-- EXPORT -->
+<div class="card">
+<h3>Export</h3>
+<button onclick="exportCSV()">Export Excel (CSV)</button>
+<button onclick="exportPDF()">Export PDF</button>
+</div>
+
+<button onclick="logout()">Logout</button>
+
+</div>
+</div>
+
+<script>
+const users = [
+ {user:"admin", pass:"1234", role:"admin"},
+ {user:"teacher", pass:"1234", role:"teacher"},
+ {user:"student", pass:"1234", role:"student"}
+];
+
+let currentRole = "";
+let editIndex = -1;
+
+function getStudents(){
+ return JSON.parse(localStorage.getItem("students")) || [];
+}
+
+function saveStudents(data){
+ localStorage.setItem("students", JSON.stringify(data));
+}
+
+function login(){
+ let u = username.value;
+ let p = password.value;
+
+ let found = users.find(x=>x.user===u && x.pass===p);
+
+ if(found){
+  currentRole = found.role;
+  loginPage.classList.add("hidden");
+  dashboard.classList.remove("hidden");
+  roleDisplay.innerText = currentRole;
+
+  if(currentRole==="admin"){
+    adminControls.classList.remove("hidden");
+  }
+
+  loadTable();
+  startScanner();
+
+ } else {
+  error.innerText = "Invalid login";
+ }
+}
+
+function logout(){
+ location.reload();
+}
+
+function loadTable(){
+ let data = getStudents();
+ table.innerHTML="";
+
+ data.forEach((s,i)=>{
+  table.innerHTML += `
+  <tr>
+  <td>${s.name}</td>
+  <td>${s.grade}</td>
+  <td>${s.absent}</td>
+  <td>
+    ${currentRole==="admin" ? `
+      <button onclick="editStudent(${i})">Edit</button>
+      <button onclick="deleteStudent(${i})">Delete</button>
+    ` : ""}
+  </td>
+  </tr>`;
+ });
+}
+
+function addStudent(){
+ let data = getStudents();
+
+ let s = {
+  name: name.value,
+  grade: grade.value,
+  absent: absent.value
+ };
+
+ if(editIndex === -1){
+  data.push(s);
+ } else {
+  data[editIndex] = s;
+  editIndex = -1;
+ }
+
+ saveStudents(data);
+ loadTable();
+}
+
+function editStudent(i){
+ let data = getStudents();
+ let s = data[i];
+
+ name.value = s.name;
+ grade.value = s.grade;
+ absent.value = s.absent;
+
+ editIndex = i;
+}
+
+function deleteStudent(i){
+ let data = getStudents();
+ data.splice(i,1);
+ saveStudents(data);
+ loadTable();
+}
+
+// QR GENERATOR
+function generateQR(){
+ qrcode.innerHTML="";
+ new QRCode(qrcode, { text: qrText.value });
+}
+
+// QR SCANNER
+function startScanner(){
+ const scanner = new Html5Qrcode("reader");
+ scanner.start(
+  { facingMode: "environment" },
+  { fps: 10, qrbox: 250 },
+  (decodedText)=>{
+    scanResult.innerText = "Scanned: " + decodedText;
+  }
+ );
+}
+
+// EXPORT CSV
+function exportCSV(){
+ let data = getStudents();
+ let csv = "Name,Grade,Absences\n";
+
+ data.forEach(s=>{
+  csv += `${s.name},${s.grade},${s.absent}\n`;
+ });
+
+ let blob = new Blob([csv]);
+ let a = document.createElement("a");
+ a.href = URL.createObjectURL(blob);
+ a.download = "students.csv";
+ a.click();
+}
+
+// EXPORT PDF
+async function exportPDF(){
+ const { jsPDF } = window.jspdf;
+ let doc = new jsPDF();
+
+ let data = getStudents();
+ let y = 10;
+
+ doc.text("Student Records", 10, y);
+ y+=10;
+
+ data.forEach(s=>{
+  doc.text(`${s.name} | Grade: ${s.grade} | Absences: ${s.absent}`, 10, y);
+  y+=10;
+ });
+
+ doc.save("students.pdf");
+}
+</script>
+
+</body>
+</html>
